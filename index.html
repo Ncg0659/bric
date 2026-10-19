@@ -1,0 +1,976 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Annemin Briç Masası</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:wght@700;800&family=Alegreya+Sans:wght@500;700;800&display=swap">
+<style>
+/* Düzen: dikey ekran. Üstte bilgi şeridi, sonra Kuzey (yer), ortada masa (Batı | el | Doğu), altta annenin eli. */
+:root {
+  --felt: #1f5b3e;          /* yeşil çuha */
+  --felt-deep: #164530;     /* çuhanın koyu kenarı */
+  --rail: #5a3a22;          /* ahşap kenar */
+  --ink: #f3efe2;           /* masadaki yazı */
+  --ink-soft: #b9cdbf;      /* ikincil yazı */
+  --card: #fbf8f0;          /* kart yüzü */
+  --card-edge: #d6cfbd;
+  --red: #c0262d;           /* ♥ ♦ */
+  --black: #1b1b1b;         /* ♠ ♣ */
+  --gold: #e8c45a;          /* oynanabilir kart vurgusu */
+  --back: #2a3f7a;          /* kart sırtı */
+  --font-ui: "Alegreya Sans", "Segoe UI", system-ui, sans-serif;
+  --font-rank: "Alegreya", Georgia, "Times New Roman", serif;
+  --font-suit: "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", serif;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }   /* gizlenen paneller kesin gizlensin */
+html, body { height: 100%; margin: 0; }
+body {
+  background: radial-gradient(120% 80% at 50% 40%, var(--felt) 0%, var(--felt-deep) 100%);
+  background-color: var(--felt-deep);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 17px;
+}
+.app {
+  max-width: 600px;
+  margin: 0 auto;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 10px 16px;
+  box-sizing: border-box;
+}
+
+/* Üst bilgi şeridi */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  background: rgba(0,0,0,.22);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+.contract { font-weight: 800; font-size: 18px; white-space: nowrap; }
+.contract .sp { font-family: var(--font-suit); }
+.score { font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; text-align: right; line-height: 1.2; white-space: nowrap; }
+.score small { display: block; font-weight: 500; color: var(--ink-soft); font-size: 13px; }
+
+.seat-label {
+  font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink-soft);
+  display: flex; align-items: center; gap: 6px;
+}
+.seat-label.turn { color: var(--gold); }
+.seat-label.turn::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--gold); }
+
+/* Kuzey (yer) — renk renk satırlar */
+.north { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.dummy { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.drow { display: flex; align-items: center; gap: 5px; min-height: 46px; }
+.drow .suit-tag { width: 26px; text-align: center; font-family: var(--font-suit); font-size: 24px; flex: none; }
+.drow .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip {
+  width: 40px; height: 46px; border-radius: 7px;
+  background: var(--card); border: 1px solid var(--card-edge);
+  font-family: var(--font-rank); font-weight: 800; font-size: 23px;
+  display: grid; place-items: center; padding: 0;
+}
+.hidden-hand { display: flex; gap: 3px; }
+
+/* Orta bölüm */
+.middle { display: grid; grid-template-columns: 54px 1fr 54px; align-items: center; gap: 6px; }
+.side { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.back {
+  width: 34px; height: 48px; border-radius: 6px;
+  background: repeating-linear-gradient(45deg, var(--back) 0 5px, #34509a 5px 10px);
+  border: 2px solid var(--card);
+  box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+.back.mini { width: 18px; height: 26px; border-width: 1.5px; }
+.count { font-size: 14px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+.trick { position: relative; height: 196px; max-width: 240px; width: 100%; margin: 0 auto; }
+.slot { position: absolute; }
+.slot.N { top: 0; left: 50%; transform: translateX(-50%); }
+.slot.S { bottom: 0; left: 50%; transform: translateX(-50%); }
+.slot.W { left: 0; top: 50%; transform: translateY(-50%); }
+.slot.E { right: 0; top: 50%; transform: translateY(-50%); }
+.trick-info {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 13px; color: var(--ink-soft); pointer-events: none; text-align: center;
+}
+
+/* Kart yüzü */
+.card {
+  width: 54px; height: 76px; border-radius: 8px;
+  background: var(--card); border: 1px solid var(--card-edge);
+  box-shadow: 0 2px 4px rgba(0,0,0,.35);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+  padding: 0; line-height: 1;
+}
+.card .r { font-family: var(--font-rank); font-weight: 800; font-size: 28px; }
+.card .s { font-family: var(--font-suit); font-size: 26px; margin-top: 2px; }
+.red { color: var(--red); }
+.blk { color: var(--black); }
+.trick .card { animation: drop .28s ease-out; }
+@keyframes drop { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
+.trick.collect .card { opacity: .55; transition: opacity .3s; }
+
+/* Annenin eli */
+.south { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+.hand { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.hand .card { width: 100%; height: auto; aspect-ratio: 5 / 7; max-width: 100%; }
+.hand .card .r { font-size: clamp(24px, 7vw, 36px); }
+.hand .card .s { font-size: clamp(22px, 6.5vw, 34px); }
+
+button.card, button.chip { cursor: pointer; font: inherit; }
+button.card .r, button.chip { font-family: var(--font-rank); }
+.playable { outline: 3px solid var(--gold); outline-offset: -1px; transform: translateY(-3px); transition: transform .15s; }
+.playable:active { transform: translateY(0); }
+button:disabled { cursor: default; }
+.dim { opacity: .38; filter: saturate(.4); box-shadow: none; }
+button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+
+.status {
+  text-align: center; font-size: 18px; font-weight: 700; min-height: 26px;
+}
+.status.mine { color: var(--gold); }
+
+/* Sonuç paneli */
+.result {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  background: rgba(0,0,0,.5);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  z-index: 20;
+}
+.result-box {
+  background: var(--card); color: var(--black);
+  border-radius: 16px; padding: 24px 22px; max-width: 340px; width: 100%;
+  text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  border-top: 8px solid var(--rail);
+}
+.result-box h2 { margin: 0 0 8px; font-family: var(--font-rank); font-size: 30px; text-wrap: balance; }
+.result-box p { margin: 0 0 18px; font-size: 18px; }
+.btn {
+  font-family: var(--font-ui); font-weight: 800; font-size: 20px;
+  background: var(--felt); color: var(--ink); border: 0; border-radius: 12px;
+  padding: 14px 28px; cursor: pointer;
+}
+/* Ayarlar ekranı */
+.settings {
+  max-width: 520px; margin: 0 auto; min-height: 100%;
+  display: flex; flex-direction: column; gap: 18px; box-sizing: border-box;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 22px 24px;
+}
+.settings h1 { margin: 0; font-family: var(--font-rank); font-size: 34px; text-align: center; text-wrap: balance; }
+.settings .lead { margin: -8px 0 0; text-align: center; color: var(--ink-soft); }
+.group { display: flex; flex-direction: column; gap: 8px; }
+.group > .seat-label { font-size: 15px; }
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.opt {
+  font-family: var(--font-ui); color: var(--ink); cursor: pointer;
+  background: rgba(0,0,0,.22); border: 2px solid rgba(255,255,255,.12);
+  border-radius: 12px; padding: 12px 10px; text-align: left;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.opt b { font-size: 20px; }
+.opt span { font-size: 15px; color: var(--ink-soft); line-height: 1.3; }
+.opt[aria-pressed="true"] { border-color: var(--gold); background: rgba(232,196,90,.14); }
+.pick-row { display: grid; gap: 6px; }
+.pick-row.levels { grid-template-columns: repeat(7, 1fr); }
+.pick-row.suits { grid-template-columns: repeat(5, 1fr); }
+.pick {
+  height: 52px; border-radius: 10px; cursor: pointer;
+  background: var(--card); border: 3px solid transparent;
+  font-family: var(--font-rank); font-weight: 800; font-size: 24px; color: var(--black);
+  padding: 0;
+}
+.pick.suit { font-family: var(--font-suit); font-size: 28px; }
+.pick.suit.red { color: var(--red); }   /* ♥ ♦ kırmızı kalsın */
+.pick.nt { font-family: var(--font-ui); font-size: 20px; }
+.pick[aria-pressed="true"] { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
+.summary {
+  text-align: center; font-size: 19px; font-weight: 700;
+  background: rgba(0,0,0,.22); border-radius: 12px; padding: 12px;
+}
+.summary small { display: block; font-weight: 500; color: var(--ink-soft); font-size: 15px; margin-top: 2px; }
+.btn.big { width: 100%; background: var(--gold); color: var(--black); font-size: 22px; padding: 16px; }
+.btn.ghost { background: transparent; color: var(--felt); border: 2px solid var(--felt); }
+.result-actions { display: flex; flex-direction: column; gap: 10px; }
+.topbtn {
+  font-family: var(--font-ui); font-weight: 700; font-size: 15px;
+  background: transparent; color: var(--ink); cursor: pointer;
+  border: 1px solid rgba(255,255,255,.3); border-radius: 8px; padding: 6px 10px;
+}
+.top-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.red-on-felt { color: #ff8a8f; }
+.pick-row.diffs { grid-template-columns: repeat(3, 1fr); }
+.pick.word { font-family: var(--font-ui); font-size: 19px; }
+.level-card {
+  background: rgba(0,0,0,.22); border-radius: 12px; padding: 14px;
+  display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center;
+}
+.dots { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; width: 100%; }
+.dot {
+  aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center;
+  font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums;
+  border: 2px solid rgba(255,255,255,.25); color: var(--ink-soft);
+}
+.dot.done { background: var(--gold); border-color: var(--gold); color: var(--black); }
+.dot.now { border-color: var(--gold); color: var(--gold); box-shadow: 0 0 0 3px rgba(232,196,90,.25); }
+.level-title { font-family: var(--font-rank); font-size: 26px; font-weight: 800; }
+.level-sub { color: var(--ink-soft); font-size: 16px; margin-top: -6px; }
+.linkbtn {
+  font-family: var(--font-ui); font-size: 15px; color: var(--ink-soft); background: none; border: 0;
+  text-decoration: underline; cursor: pointer; padding: 4px;
+}
+.linkbtn.armed { color: #ff8a8f; font-weight: 700; }
+.contract small { display: block; font-size: 13px; font-weight: 500; color: var(--ink-soft); }
+.stack { display: flex; flex-direction: column; gap: 18px; }
+@media (prefers-reduced-motion: reduce) {
+  .trick .card { animation: none; }
+  .playable { transform: none; }
+}
+</style>
+</head>
+<body>
+
+
+<section class="settings" id="settings">
+  <h1>Briç Masası</h1>
+  <p class="lead">Nasıl oynamak istediğinizi seçin</p>
+
+  <div class="group">
+    <div class="seat-label">Oyun şekli</div>
+    <div class="modes">
+      <button type="button" class="opt" id="play-seviye" data-play="seviye">
+        <b>Seviyeler</b><span>Kazandıkça bir sonraki seviye açılır</span>
+      </button>
+      <button type="button" class="opt" id="play-serbest" data-play="serbest">
+        <b>Serbest Oyun</b><span>Kontratı ve rakipleri siz seçersiniz</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="seat-label">Oyun türü</div>
+    <div class="modes">
+      <button type="button" class="opt" id="mode-esli" data-mode="esli">
+        <b>Eşli</b><span>Eşinizin (Kuzey) kartlarını da siz oynarsınız</span>
+      </button>
+      <button type="button" class="opt" id="mode-essiz" data-mode="essiz">
+        <b>Eşsiz</b><span>Siz sadece kendi elinizi oynarsınız, eşinizi bilgisayar oynar</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="group" id="level-panel">
+    <div class="seat-label">İlerlemeniz</div>
+    <div class="level-card">
+      <div class="dots" id="dots"></div>
+      <div class="level-title" id="level-title"></div>
+      <div class="level-sub" id="level-sub"></div>
+      <button type="button" class="linkbtn" id="reset-progress">İlerlemeyi sıfırla</button>
+    </div>
+  </div>
+
+  <div class="stack" id="free-panel">
+    <div class="group">
+      <div class="seat-label">Rakipler</div>
+      <div class="pick-row diffs" id="diffs"></div>
+    </div>
+    <div class="group">
+      <div class="seat-label">Kontrat · kaç el</div>
+      <div class="pick-row levels" id="levels"></div>
+    </div>
+    <div class="group">
+      <div class="seat-label">Kontrat · koz</div>
+      <div class="pick-row suits" id="suits"></div>
+    </div>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <button type="button" class="btn big" id="start">Oyunu Başlat</button>
+</section>
+
+<div class="app" id="game" hidden>
+  <header class="topbar">
+    <div class="top-left">
+      <button type="button" class="topbtn" id="to-settings">Ayarlar</button>
+      <div class="contract" id="contract-label"></div>
+    </div>
+    <div class="score" id="score"></div>
+  </header>
+
+  <section class="north">
+    <div class="seat-label" id="label-N">Kuzey · eşiniz</div>
+    <div id="north-area"></div>
+  </section>
+
+  <section class="middle">
+    <div class="side">
+      <div class="seat-label" id="label-W">Batı</div>
+      <div class="back"></div>
+      <div class="count" id="count-W">13</div>
+    </div>
+    <div class="trick" id="trick">
+      <div class="trick-info" id="trick-info">El 1 / 13</div>
+      <div class="slot N" id="slot-N"></div>
+      <div class="slot E" id="slot-E"></div>
+      <div class="slot S" id="slot-S"></div>
+      <div class="slot W" id="slot-W"></div>
+    </div>
+    <div class="side">
+      <div class="seat-label" id="label-E">Doğu</div>
+      <div class="back"></div>
+      <div class="count" id="count-E">13</div>
+    </div>
+  </section>
+
+  <section class="south">
+    <div class="status" id="status"></div>
+    <div class="seat-label" id="label-S" style="justify-content:center">Güney · siz</div>
+    <div class="hand" id="south-hand"></div>
+  </section>
+</div>
+
+<div class="result" id="result" hidden>
+  <div class="result-box">
+    <h2 id="result-title"></h2>
+    <p id="result-text"></p>
+    <div class="result-actions">
+      <button class="btn" id="new-deal" type="button">Yeni El</button>
+      <button class="btn ghost" id="result-settings" type="button">Ayarları Değiştir</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   1) SABİTLER
+   ========================================================= */
+const SUITS = ['S', 'H', 'C', 'D'];             // dizilim sırası: ♠ ♥ ♣ ♦ (renkler sırayla siyah/kırmızı)
+const SUIT_SYMBOL = { S: '♠︎', H: '♥︎', D: '♦︎', C: '♣︎' };
+const RED_SUITS = ['H', 'D'];
+const RANK_TEXT = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' }; // 2..10 kendi sayısı
+const SEATS = ['N', 'E', 'S', 'W'];             // saat yönünde sıra
+const SEAT_NAME = { N: 'Kuzey', E: 'Doğu', S: 'Güney', W: 'Batı' };
+const NT = 'NT';                                // Sanzatu (kozsuz)
+const BOT_DELAY = 1000;                         // botların kart arası bekleme (ms)
+const COLLECT_DELAY = 1500;                     // el tamamlanınca toplamadan önce bekleme
+
+/* =========================================================
+   2) KURAL FONKSİYONLARI  (ekranla ilgisi yok, sonra ihale eklerken aynen kullanılır)
+   ========================================================= */
+
+// 52 kartlık deste oluşturur
+function createDeck() {
+  const deck = [];
+  for (const suit of SUITS) {
+    for (let rank = 2; rank <= 14; rank++) {
+      deck.push({ suit, rank, id: suit + rank });
+    }
+  }
+  return deck;
+}
+
+// Desteyi karıştırır (Fisher–Yates yöntemi)
+function shuffle(deck) {
+  const a = deck.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Karıştırılmış desteyi 4 oyuncuya 13'er kart dağıtır
+function dealHands(deck) {
+  const hands = { N: [], E: [], S: [], W: [] };
+  deck.forEach((card, i) => hands[SEATS[i % 4]].push(card));
+  for (const seat of SEATS) hands[seat] = sortHand(hands[seat]);
+  return hands;
+}
+
+// Eli renge göre (♠ ♥ ♣ ♦), her rengin içinde büyükten küçüğe dizer
+function sortHand(hand) {
+  return hand.slice().sort((a, b) =>
+    a.suit !== b.suit ? SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit) : b.rank - a.rank
+  );
+}
+
+// Saat yönünde bir sonraki oyuncu
+function nextSeat(seat) {
+  return SEATS[(SEATS.indexOf(seat) + 1) % 4];
+}
+
+// Ortak (Kuzey-Güney, Doğu-Batı)
+function partnerOf(seat) {
+  return SEATS[(SEATS.indexOf(seat) + 2) % 4];
+}
+
+// Oynanabilir kartlar: açılan renk elde varsa sadece o renk; yoksa hepsi
+function legalCards(hand, trick) {
+  if (trick.length === 0) return hand.slice();
+  const leadSuit = trick[0].card.suit;
+  const sameSuit = hand.filter(c => c.suit === leadSuit);
+  return sameSuit.length > 0 ? sameSuit : hand.slice();
+}
+
+// a kartı b kartını geçer mi?
+function beats(a, b, leadSuit, trump) {
+  if (a.suit === b.suit) return a.rank > b.rank;
+  if (a.suit === trump) return true;
+  if (b.suit === trump) return false;
+  return a.suit === leadSuit;
+}
+
+// Masadaki eli kim alıyor? (el yarım olsa da "şu an kim önde" sorusunu cevaplar)
+function trickWinner(trick, trump) {
+  const leadSuit = trick[0].card.suit;
+  let best = trick[0];
+  for (const play of trick.slice(1)) {
+    if (beats(play.card, best.card, leadSuit, trump)) best = play;
+  }
+  return best.seat;
+}
+
+// Bilgisayar hangi kartı oynasın? Zorluğa göre üç farklı oyuncu
+function botChooseCard(hand, trick, trump, seat, difficulty = 'orta') {
+  if (difficulty === 'kolay') return botEasy(hand, trick);
+  if (difficulty === 'zor') return botHard(hand, trick, trump, seat);
+  return botMedium(hand, trick, trump, seat);
+}
+
+// KOLAY: kurallara uyan kartlardan rastgele birini oynar
+function botEasy(hand, trick) {
+  const legal = legalCards(hand, trick);
+  return legal[Math.floor(Math.random() * legal.length)];
+}
+
+// ORTA: renge uy, alabiliyorsan al, alamıyorsan en küçüğü at
+function botMedium(hand, trick, trump, seat) {
+  const legal = legalCards(hand, trick);
+  const lowFirst = (a, b) => a.rank - b.rank;
+
+  // İlk kartı açıyorsa: kozdan başka en uzun renginin en küçüğünü açar
+  if (trick.length === 0) {
+    let bestSuit = null, bestLen = -Infinity;
+    for (const s of SUITS) {
+      const len = legal.filter(c => c.suit === s).length;
+      if (len === 0) continue;
+      const score = s === trump ? len - 100 : len;  // kozu en son tercih eder
+      if (score > bestLen) { bestLen = score; bestSuit = s; }
+    }
+    return legal.filter(c => c.suit === bestSuit).sort(lowFirst)[0];
+  }
+
+  // Eli alabiliyorsa en ucuz alan kartı oynar (ortağı zaten alıyorsa boşuna büyük atmaz)
+  const winnerNow = trickWinner(trick, trump);
+  if (winnerNow !== partnerOf(seat)) {
+    const winners = legal
+      .filter(c => trickWinner([...trick, { seat, card: c }], trump) === seat)
+      .sort(lowFirst);
+    if (winners.length > 0) return winners[0];
+  }
+
+  // Alamıyorsa en küçüğü atar (mümkünse kozu harcamaz)
+  const nonTrump = legal.filter(c => c.suit !== trump);
+  return (nonTrump.length ? nonTrump : legal).sort(lowFirst)[0];
+}
+
+// Kontrattan koz rengi: Sanzatu ise koz yok (null)
+function trumpOf(contract) {
+  return contract.suit === NT ? null : contract.suit;
+}
+
+// Kontratı tutmak için gereken el sayısı: 6 + seviye (ör. 4♠ → 10)
+function tricksNeeded(contract) {
+  return 6 + contract.level;
+}
+
+// ZOR: klasik briç alışkanlıklarıyla oynar
+//  - As-Papaz varsa As'ı açar, ardışık büyüklerin (P-K, K-V) büyüğünü açar
+//  - ikinci sırada küçük atar, ama açılan büyük kartı kapatabiliyorsa kapatır
+//  - ortağı eli alıyorsa kart harcamaz, ortağının elini kozla kesmez
+//  - atarken kozu ve büyükleri korur
+function botHard(hand, trick, trump, seat) {
+  const legal = legalCards(hand, trick);
+  const lowest = cards => cards.slice().sort((a, b) => a.rank - b.rank)[0];
+  const discard = cards => {
+    const side = cards.filter(c => c.suit !== trump);
+    return lowest(side.length ? side : cards);
+  };
+
+  if (trick.length === 0) {
+    for (const s of SUITS) {
+      if (s === trump) continue;
+      const cs = hand.filter(c => c.suit === s);
+      if (cs.some(c => c.rank === 14) && cs.some(c => c.rank === 13)) return cs.find(c => c.rank === 14);
+    }
+    for (const s of SUITS) {
+      if (s === trump) continue;
+      const cs = hand.filter(c => c.suit === s).sort((a, b) => b.rank - a.rank);
+      if (cs.length >= 2 && cs[0].rank >= 11 && cs[0].rank < 14 && cs[1].rank === cs[0].rank - 1) return cs[0];
+    }
+    return botMedium(hand, trick, trump, seat);
+  }
+
+  const leadSuit = trick[0].card.suit;
+  const canFollow = hand.some(c => c.suit === leadSuit);
+  const partnerWinning = trickWinner(trick, trump) === partnerOf(seat);
+  const winners = legal
+    .filter(c => trickWinner([...trick, { seat, card: c }], trump) === seat)
+    .sort((a, b) => a.rank - b.rank);
+
+  if (partnerWinning) return canFollow ? lowest(legal) : discard(legal);
+  if (trick.length === 1 && canFollow) {
+    if (trick[0].card.rank >= 11 && winners.length) return winners[0];
+    return lowest(legal);
+  }
+  if (winners.length) return winners[0];
+  return canFollow ? lowest(legal) : discard(legal);
+}
+
+// Elin puanı: As 4, Papaz 3, Kız 2, Vale 1 (briçte el gücünün ölçüsü)
+function hcp(hand) {
+  return hand.reduce((total, c) => total + Math.max(0, c.rank - 10), 0);
+}
+
+function suitCount(hand, suit) {
+  return hand.filter(c => c.suit === suit).length;
+}
+
+// Kontrata uygun dağıtım: Kuzey+Güney yeterli puanı (ve kozlu oyunda yeterli kozu) alana kadar yeniden dağıtır.
+// İhale olmadığı için bu, kontratın tutulabilir olmasını sağlar.
+function dealForContract(contract, minHCP) {
+  const trump = trumpOf(contract);
+  let best = null, bestScore = -Infinity;
+  for (let i = 0; i < 20000; i++) {
+    const hands = dealHands(shuffle(createDeck()));
+    const points = hcp(hands.N) + hcp(hands.S);
+    const fitS = trump ? suitCount(hands.S, trump) : 0;
+    const fit = trump ? fitS + suitCount(hands.N, trump) : 0;
+    const ok = points >= minHCP && (!trump || (fitS >= 4 && fit >= 8));
+    if (ok) return hands;
+    const score = points + fit * 2;
+    if (score > bestScore) { bestScore = score; best = hands; }
+  }
+  return best;  // çok nadir: koşul bulunamazsa en yakın dağıtım
+}
+
+// 10 seviye: kontrat, rakiplerin zorluğu ve sizin tarafa düşen en az puan.
+// Puan payı azaldıkça ve rakipler akıllandıkça seviye zorlaşır.
+const LEVELS = [
+  { contract: { level: 2, suit: 'S' },  difficulty: 'kolay', minHCP: 24 },
+  { contract: { level: 2, suit: 'H' },  difficulty: 'kolay', minHCP: 23 },
+  { contract: { level: 1, suit: NT },   difficulty: 'kolay', minHCP: 22 },
+  { contract: { level: 3, suit: 'S' },  difficulty: 'orta',  minHCP: 26 },
+  { contract: { level: 3, suit: NT },   difficulty: 'orta',  minHCP: 28 },
+  { contract: { level: 4, suit: 'H' },  difficulty: 'orta',  minHCP: 30 },
+  { contract: { level: 3, suit: NT },   difficulty: 'zor',   minHCP: 28 },
+  { contract: { level: 4, suit: 'S' },  difficulty: 'zor',   minHCP: 30 },
+  { contract: { level: 5, suit: 'D' },  difficulty: 'zor',   minHCP: 33 },
+  { contract: { level: 6, suit: 'S' },  difficulty: 'zor',   minHCP: 35 }
+];
+
+/* =========================================================
+   3) AYARLAR  (seçimler telefonda saklanır, bir dahaki açılışta hatırlanır)
+   ========================================================= */
+const DEFAULT_SETTINGS = {
+  play: 'seviye',                         // 'seviye' | 'serbest'
+  mode: 'esli',                           // 'esli' | 'essiz'
+  difficulty: 'orta',                     // serbest oyunda rakipler
+  contract: { level: 4, suit: 'S' },      // serbest oyunda kontrat
+  progress: 0                             // seviye modunda sıradaki seviye (0 = Seviye 1)
+};
+const DIFF_NAME = { kolay: 'Kolay', orta: 'Orta', zor: 'Zor' };
+// Sayılara doğru Türkçe ekler: "Seviye 2'ye geç", "Seviye 3'ü başlat"
+const EK_YE = { 1: "'e", 2: "'ye", 3: "'e", 4: "'e", 5: "'e", 6: "'ya", 7: "'ye", 8: "'e", 9: "'a", 10: "'a" };
+const EK_I  = { 1: "'i", 2: "'yi", 3: "'ü", 4: "'ü", 5: "'i", 6: "'yı", 7: "'yi", 8: "'i", 9: "'u", 10: "'u" };
+const STORE_KEY = 'bric-ayarlar';
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (saved && saved.contract && saved.contract.level >= 1 && saved.contract.level <= 7) {
+      const merged = { ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), ...saved };
+      merged.progress = Math.min(Math.max(0, merged.progress | 0), LEVELS.length - 1);
+      return merged;
+    }
+  } catch (e) { /* saklama kapalıysa varsayılanla devam */ }
+  return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+}
+
+function saveSettings() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(settings)); } catch (e) {}
+}
+
+let settings = loadSettings();
+
+// Kontratı ekranda yazmak için: "4♠", "3SA"
+function contractHTML(c, onFelt) {
+  if (c.suit === NT) return `${c.level}SA`;
+  const red = RED_SUITS.includes(c.suit);
+  const cls = red ? (onFelt ? 'red-on-felt' : 'red') : '';
+  return `${c.level}<span class="sp ${cls}">${SUIT_SYMBOL[c.suit]}</span>`;
+}
+
+// Şu an oynanacak kontrat ve rakip zorluğu (seviye modunda tablodan, serbestte seçimden)
+function currentSetup() {
+  if (settings.play === 'seviye') {
+    const L = LEVELS[settings.progress];
+    return { contract: { ...L.contract }, difficulty: L.difficulty, minHCP: L.minHCP, levelNo: settings.progress + 1 };
+  }
+  return { contract: { ...settings.contract }, difficulty: settings.difficulty, minHCP: null, levelNo: null };
+}
+
+let resetArmed = false;   // "İlerlemeyi sıfırla" iki dokunuşla çalışır
+
+function renderSettings() {
+  const lvlMode = settings.play === 'seviye';
+  document.getElementById('play-seviye').setAttribute('aria-pressed', lvlMode);
+  document.getElementById('play-serbest').setAttribute('aria-pressed', !lvlMode);
+  document.getElementById('level-panel').hidden = !lvlMode;
+  document.getElementById('free-panel').hidden = lvlMode;
+
+  // İlerleme noktaları
+  document.getElementById('dots').innerHTML = LEVELS.map((L, i) => {
+    const cls = i < settings.progress ? 'done' : i === settings.progress ? 'now' : '';
+    return `<span class="dot ${cls}">${i + 1}</span>`;
+  }).join('');
+  const L = LEVELS[settings.progress];
+  document.getElementById('level-title').textContent = `Seviye ${settings.progress + 1}`;
+  document.getElementById('level-sub').textContent = `Rakipler: ${DIFF_NAME[L.difficulty]}`;
+  const rb = document.getElementById('reset-progress');
+  rb.textContent = resetArmed ? 'Emin misiniz? Sıfırlamak için tekrar dokunun' : 'İlerlemeyi sıfırla';
+  rb.classList.toggle('armed', resetArmed);
+  rb.hidden = settings.progress === 0;
+
+  document.getElementById('diffs').innerHTML = ['kolay', 'orta', 'zor'].map(d =>
+    `<button type="button" class="pick word" data-diff="${d}" aria-pressed="${settings.difficulty === d}">${DIFF_NAME[d]}</button>`
+  ).join('');
+
+  document.getElementById('start').textContent = lvlMode ? `Seviye ${settings.progress + 1}${EK_I[settings.progress + 1]} Başlat` : 'Oyunu Başlat';
+
+  document.getElementById('mode-esli').setAttribute('aria-pressed', settings.mode === 'esli');
+  document.getElementById('mode-essiz').setAttribute('aria-pressed', settings.mode === 'essiz');
+
+  let lv = '';
+  for (let l = 1; l <= 7; l++) {
+    lv += `<button type="button" class="pick" data-level="${l}" aria-pressed="${settings.contract.level === l}">${l}</button>`;
+  }
+  document.getElementById('levels').innerHTML = lv;
+
+  const suitOrder = ['C', 'D', 'H', 'S', NT];   // briçteki sıralama: ♣ ♦ ♥ ♠ SA
+  document.getElementById('suits').innerHTML = suitOrder.map(s => {
+    const pressed = settings.contract.suit === s;
+    if (s === NT) return `<button type="button" class="pick nt" data-suit="${NT}" aria-pressed="${pressed}" aria-label="Sanzatu">SA</button>`;
+    return `<button type="button" class="pick suit ${colorClass(s)}" data-suit="${s}" aria-pressed="${pressed}">${SUIT_SYMBOL[s]}</button>`;
+  }).join('');
+
+  const c = currentSetup().contract;
+  const kozText = c.suit === NT ? 'Koz yok (Sanzatu)' : 'Koz: ' + { S: 'Maça', H: 'Kupa', D: 'Karo', C: 'Sinek' }[c.suit];
+  document.getElementById('summary').innerHTML =
+    `Kontrat: ${contractHTML(c, true)}<small>${kozText} · ${tricksNeeded(c)} el almanız gerekiyor</small>`;
+}
+
+function showSettings() {
+  if (state) state.gameId = -1;             // bekleyen bot hamlelerini iptal eder
+  document.getElementById('result').hidden = true;
+  document.getElementById('game').hidden = true;
+  document.getElementById('settings').hidden = false;
+  renderSettings();
+  window.scrollTo(0, 0);
+}
+
+document.getElementById('settings').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.id !== 'reset-progress') resetArmed = false;
+  if (b.id === 'reset-progress') {
+    if (resetArmed) { settings.progress = 0; resetArmed = false; saveSettings(); }
+    else resetArmed = true;
+  }
+  if (b.dataset.play) settings.play = b.dataset.play;
+  if (b.dataset.diff) settings.difficulty = b.dataset.diff;
+  if (b.dataset.mode) settings.mode = b.dataset.mode;
+  if (b.dataset.level) settings.contract.level = Number(b.dataset.level);
+  if (b.dataset.suit) settings.contract.suit = b.dataset.suit;
+  if (b.id === 'start') {
+    saveSettings();
+    document.getElementById('settings').hidden = true;
+    document.getElementById('game').hidden = false;
+    newGame();
+    return;
+  }
+  renderSettings();
+});
+
+/* =========================================================
+   4) OYUN DURUMU
+   ========================================================= */
+let state = null;
+let gameCounter = 0;
+
+// Bu koltuğu bilgisayar mı oynuyor?
+function isBot(seat) {
+  if (seat === 'W' || seat === 'E') return true;
+  if (seat === 'N') return settings.mode === 'essiz';
+  return false;
+}
+
+function newGame() {
+  const setup = currentSetup();
+  const contract = setup.contract;
+  state = {
+    gameId: ++gameCounter,  // eski oyundan kalan zamanlayıcıları ayırt etmek için
+    contract,
+    difficulty: setup.difficulty,
+    levelNo: setup.levelNo,  // serbest oyunda null
+    trump: trumpOf(contract),
+    target: tricksNeeded(contract),
+    // Seviyede kontrata uygun dağıtım, serbest oyunda tamamen rastgele
+    hands: setup.minHCP ? dealForContract(contract, setup.minHCP) : dealHands(shuffle(createDeck())),
+    trick: [],            // masadaki kartlar: [{seat, card}]
+    turn: 'W',            // ilk kartı Batı açar
+    tricksNS: 0,          // Biz
+    tricksEW: 0,          // Onlar
+    trickNo: 1,
+    dummyOpen: false,     // Kuzey'in kartları açık mı?
+    busy: false,          // animasyon/bot sırası: dokunma kapalı
+    collecting: false
+  };
+  document.getElementById('result').hidden = true;
+  render();
+  scheduleNext();
+}
+
+// Bir kartı oynar (hem bot hem anne bunu kullanır)
+function playCard(seat, card) {
+  const hand = state.hands[seat];
+  hand.splice(hand.findIndex(c => c.id === card.id), 1);
+  state.trick.push({ seat, card });
+  state.dummyOpen = true;                 // ilk karttan sonra yer açılır
+
+  if (state.trick.length === 4) {
+    state.busy = true;
+    state.collecting = true;
+    render();
+    const id = state.gameId;
+    setTimeout(() => { if (state.gameId === id) collectTrick(); }, COLLECT_DELAY);
+  } else {
+    state.turn = nextSeat(seat);
+    render();
+    scheduleNext();
+  }
+}
+
+// Sıradaki oyuncu bilgisayarsa biraz bekleyip oynatır; anne ise dokunmayı açar
+function scheduleNext() {
+  const t = state.turn;
+  if (isBot(t)) {
+    state.busy = true;
+    render();
+    const id = state.gameId;
+    setTimeout(() => {
+      if (state.gameId !== id) return;      // bu arada ayarlara dönüldüyse hiçbir şey yapma
+      // Rakipler seçilen zorlukta, eşiniz (eşsiz modda) her zaman en iyi şekilde oynar
+      const level = t === 'N' ? 'zor' : state.difficulty;
+      const card = botChooseCard(state.hands[t], state.trick, state.trump, t, level);
+      playCard(t, card);
+    }, BOT_DELAY);
+  } else {
+    state.busy = false;
+    render();
+  }
+}
+
+// El tamamlanınca: kazananı bul, sayacı artır, masayı temizle
+function collectTrick() {
+  const winner = trickWinner(state.trick, state.trump);
+  if (winner === 'N' || winner === 'S') state.tricksNS++;
+  else state.tricksEW++;
+
+  state.trick = [];
+  state.collecting = false;
+
+  if (state.trickNo === 13) {
+    render();
+    showResult();
+    return;
+  }
+  state.trickNo++;
+  state.turn = winner;                     // eli alan sonrakini açar
+  scheduleNext();
+}
+
+function showResult() {
+  const made = state.tricksNS;
+  const title = document.getElementById('result-title');
+  const text = document.getElementById('result-text');
+  const btn = document.getElementById('new-deal');
+  const won = made >= state.target;
+  const extra = made - state.target;
+  title.textContent = won ? 'Kontrat tuttu!' : `${state.target - made} el eksik kaldı`;
+  let msg = won
+    ? `${made} el aldınız` + (extra > 0 ? `, ${extra} el fazla.` : '.')
+    : `${made} el aldınız, ${state.target} el gerekiyordu.`;
+  btn.textContent = 'Yeni El';
+
+  // Seviye modu: kazanınca bir sonraki seviye açılır ve telefonda saklanır
+  if (state.levelNo) {
+    const last = LEVELS.length;
+    if (won && state.levelNo < last) {
+      settings.progress = state.levelNo;          // sıradaki seviye
+      saveSettings();
+      msg += ` Seviye ${state.levelNo + 1} açıldı!`;
+      btn.textContent = `Seviye ${state.levelNo + 1}${EK_YE[state.levelNo + 1]} Geç`;
+    } else if (won) {
+      title.textContent = 'Tebrikler, bütün seviyeler bitti!';
+      btn.textContent = 'Son Seviyeyi Tekrar Oyna';
+    } else {
+      btn.textContent = 'Tekrar Dene';
+    }
+  }
+  text.textContent = msg;
+  document.getElementById('result').hidden = false;
+  document.getElementById('new-deal').focus();
+}
+
+/* =========================================================
+   5) EKRANA ÇİZME
+   ========================================================= */
+function rankText(rank) { return RANK_TEXT[rank] || String(rank); }
+function colorClass(suit) { return RED_SUITS.includes(suit) ? 'red' : 'blk'; }
+
+// Büyük kart (masadaki ve annenin eli)
+function cardHTML(card, opts = {}) {
+  const cls = ['card', colorClass(card.suit)];
+  if (opts.playable) cls.push('playable');
+  if (opts.dim) cls.push('dim');
+  const label = `${rankText(card.rank)} ${SUIT_SYMBOL[card.suit]}`;
+  const inner = `<span class="r">${rankText(card.rank)}</span><span class="s">${SUIT_SYMBOL[card.suit]}</span>`;
+  if (opts.button) {
+    return `<button type="button" class="${cls.join(' ')}" data-seat="${opts.seat}" data-id="${card.id}"
+      aria-label="${label}" ${opts.playable ? '' : 'disabled'}>${inner}</button>`;
+  }
+  return `<div class="${cls.join(' ')}" aria-label="${label}">${inner}</div>`;
+}
+
+// Bu oyuncu için şu an hangi kartlar tıklanabilir?
+function playableIds(seat) {
+  if (state.busy || state.turn !== seat) return new Set();
+  return new Set(legalCards(state.hands[seat], state.trick).map(c => c.id));
+}
+
+function render() {
+  // Sayaç
+  document.getElementById('score').innerHTML =
+    `Biz: ${state.tricksNS} / Onlar: ${state.tricksEW}<small>Hedef: ${state.target} el</small>`;
+  document.getElementById('contract-label').innerHTML = 'Kontrat: ' + contractHTML(state.contract, true) +
+    `<small>${state.levelNo ? 'Seviye ' + state.levelNo + ' · ' : ''}Rakipler: ${DIFF_NAME[state.difficulty]}</small>`;
+  document.getElementById('label-N').textContent = isBot('N') ? 'Kuzey · eşiniz (bilgisayar)' : 'Kuzey · eşiniz';
+
+  // Sıra göstergesi
+  for (const s of SEATS) {
+    document.getElementById('label-' + s).classList.toggle('turn', !state.collecting && state.turn === s && !isOver());
+  }
+
+  // Kuzey (yer)
+  const northArea = document.getElementById('north-area');
+  if (!state.dummyOpen) {
+    northArea.innerHTML = `<div class="hidden-hand">${'<div class="back mini"></div>'.repeat(13)}</div>`;
+  } else {
+    const ok = playableIds('N');
+    let rows = '';
+    for (const suit of SUITS) {
+      const cards = state.hands.N.filter(c => c.suit === suit);
+      const chips = cards.map(c => {
+        const p = ok.has(c.id);
+        const dim = state.turn === 'N' && !state.busy && !p;
+        return `<button type="button" class="chip ${colorClass(suit)} ${p ? 'playable' : ''} ${dim ? 'dim' : ''}"
+          data-seat="N" data-id="${c.id}" aria-label="${rankText(c.rank)} ${SUIT_SYMBOL[suit]}" ${p ? '' : 'disabled'}>${rankText(c.rank)}</button>`;
+      }).join('');
+      rows += `<div class="drow"><span class="suit-tag ${colorClass(suit)}" style="color:${RED_SUITS.includes(suit) ? '#ff8a8f' : 'var(--ink)'}">${SUIT_SYMBOL[suit]}</span><div class="chips">${chips || '<span class="count">—</span>'}</div></div>`;
+    }
+    northArea.innerHTML = `<div class="dummy">${rows}</div>`;
+  }
+
+  // Rakiplerin kalan kart sayısı
+  document.getElementById('count-W').textContent = state.hands.W.length + ' kart';
+  document.getElementById('count-E').textContent = state.hands.E.length + ' kart';
+
+  // Masadaki el
+  for (const s of SEATS) {
+    const play = state.trick.find(p => p.seat === s);
+    const slot = document.getElementById('slot-' + s);
+    const want = play ? play.card.id : '';
+    if (slot.dataset.card !== want) {         // sadece değişince çiz (animasyon tekrar etmesin)
+      slot.dataset.card = want;
+      slot.innerHTML = play ? cardHTML(play.card) : '';
+    }
+  }
+  document.getElementById('trick').classList.toggle('collect', state.collecting);
+  document.getElementById('trick-info').textContent = `El ${state.trickNo} / 13`;
+
+  // Annenin eli
+  const okS = playableIds('S');
+  const myTurnS = state.turn === 'S' && !state.busy;
+  document.getElementById('south-hand').innerHTML = state.hands.S.map(c =>
+    cardHTML(c, { button: true, seat: 'S', playable: okS.has(c.id), dim: !okS.has(c.id) && (myTurnS || (state.turn === 'N' && !isBot('N'))) })
+  ).join('');
+
+  // Durum yazısı
+  const status = document.getElementById('status');
+  let msg = '', mine = false;
+  if (isOver()) msg = 'Oyun bitti';
+  else if (state.collecting) {
+    const w = trickWinner(state.trick, state.trump);
+    msg = `Eli ${SEAT_NAME[w]} aldı`;
+  }
+  else if (state.turn === 'S') { msg = 'Sıra sizde'; mine = true; }
+  else if (state.turn === 'N' && !isBot('N')) { msg = "Sıra Kuzey'de — yerden oynayın"; mine = true; }
+  else msg = `${SEAT_NAME[state.turn]} düşünüyor…`;
+  status.textContent = msg;
+  status.classList.toggle('mine', mine);
+}
+
+function isOver() {
+  return state.tricksNS + state.tricksEW === 13;
+}
+
+/* =========================================================
+   6) DOKUNMA / TIKLAMA
+   ========================================================= */
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-seat]');
+  if (!btn || btn.disabled) return;
+  const seat = btn.dataset.seat;
+  if (!state || state.busy || state.turn !== seat || isBot(seat)) return;
+  const card = state.hands[seat].find(c => c.id === btn.dataset.id);
+  if (!card || !playableIds(seat).has(card.id)) return;
+  state.busy = true;              // çift dokunmayı engeller
+  playCard(seat, card);
+});
+
+document.getElementById('new-deal').addEventListener('click', newGame);
+document.getElementById('result-settings').addEventListener('click', showSettings);
+document.getElementById('to-settings').addEventListener('click', showSettings);
+
+// Açılışta oyun değil, ayarlar ekranı gelir
+showSettings();
+</script>
+
+</body>
+</html>
