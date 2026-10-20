@@ -2,6 +2,8 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; manifest-src 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Annemin Briç Masası</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -669,17 +671,35 @@ const EK_YE = { 1: "'e", 2: "'ye", 3: "'e", 4: "'e", 5: "'e", 6: "'ya", 7: "'ye"
 const EK_I  = { 1: "'i", 2: "'yi", 3: "'ü", 4: "'ü", 5: "'i", 6: "'yı", 7: "'yi", 8: "'i", 9: "'u", 10: "'u" };
 const STORE_KEY = 'bric-ayarlar';
 
+// Kayıtlı ayarlar bozulmuş veya elle değiştirilmiş olabilir.
+// Yalnızca tanıdığımız değerleri kabul ederiz; diğerlerinde güvenli varsayılanları kullanırız.
 function loadSettings() {
+  const safe = { ...DEFAULT_SETTINGS, contract: { ...DEFAULT_SETTINGS.contract } };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY));
-    if (saved && saved.contract && saved.contract.level >= 1 && saved.contract.level <= 7) {
-      const merged = { ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), ...saved };
-      merged.progress = Math.min(Math.max(0, merged.progress | 0), LEVELS.length - 1);
-      if (!BACKS[merged.back]) merged.back = 1;
-      return merged;
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return safe;
+
+    if (saved.play === 'seviye' || saved.play === 'serbest') safe.play = saved.play;
+    if (saved.mode === 'esli' || saved.mode === 'essiz') safe.mode = saved.mode;
+    if (['kolay', 'orta', 'zor'].includes(saved.difficulty)) safe.difficulty = saved.difficulty;
+    if (Number.isInteger(saved.progress)) {
+      safe.progress = Math.min(Math.max(0, saved.progress), LEVELS.length - 1);
     }
-  } catch (e) { /* saklama kapalıysa varsayılanla devam */ }
-  return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    if (Number.isInteger(saved.back) && saved.back >= 1 && saved.back <= 5) {
+      safe.back = saved.back;
+    }
+
+    const contract = saved.contract;
+    if (contract && typeof contract === 'object' && !Array.isArray(contract)) {
+      if (Number.isInteger(contract.level) && contract.level >= 1 && contract.level <= 7) {
+        safe.contract.level = contract.level;
+      }
+      if (SUITS.includes(contract.suit) || contract.suit === NT) {
+        safe.contract.suit = contract.suit;
+      }
+    }
+  } catch (e) { /* Bozuk kayıt veya kapalı depolama: varsayılanlarla devam. */ }
+  return safe;
 }
 
 function saveSettings() {
