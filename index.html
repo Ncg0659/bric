@@ -611,6 +611,423 @@ function botHard(hand, trick, trump, seat) {
   return canFollow ? lowest(legal) : discard(legal);
 }
 
+/* ---------------------------------------------------------
+   ZOR BOT — SAVUNMA (Doğu ve Batı için)
+   Bu bot yalnızca "görünür bilgi" ile karar verir:
+   kendi eli, masadaki kartlar, biten eller, açılmış yer (Kuzey) ve kontrat.
+   Diğer oyuncuların gizli elleri bu bilgiye hiç konmaz.
+   (Eski Zor bot yukarıda "botHard" olarak duruyor; eşsiz modda Kuzey onu kullanır.)
+   --------------------------------------------------------- */
+
+const DUMMY_SEAT = 'N';
+const DECLARER_SEAT = 'S';
+
+// Nesneyi ve içindekileri değiştirilemez yapar (bot yanlışlıkla oyunu bozamasın)
+function deepFreeze(obj) {
+  Object.values(obj).forEach(v => { if (v && typeof v === 'object') deepFreeze(v); });
+  return Object.freeze(obj);
+}
+
+// Botun görebileceği her şeyin KOPYASI. Gizli eller burada YOK.
+function buildView(game, seat) {
+  const copyCard = c => ({ suit: c.suit, rank: c.rank, id: c.id });
+  const copyPlays = plays => plays.map(p => ({ seat: p.seat, card: copyCard(p.card) }));
+  const dummyVisible = game.dummyOpen && seat !== DUMMY_SEAT;
+  return deepFreeze({
+    seat,
+    hand: game.hands[seat].map(copyCard),
+    trick: copyPlays(game.trick),
+    history: (game.history || []).map(t => ({ plays: copyPlays(t.plays), winner: t.winner })),
+    contract: { level: game.contract.level, suit: game.contract.suit },
+    trump: game.trump,
+    target: game.target,
+    declarer: DECLARER_SEAT,
+    dummySeat: DUMMY_SEAT,
+    dummy: dummyVisible ? game.hands[DUMMY_SEAT].map(copyCard) : null,
+    tricksNS: game.tricksNS,
+    tricksEW: game.tricksEW
+  });
+}
+
+// Masa hafızası: oynanan kartlar, kimin hangi rengi bitirdiği, henüz görülmemiş kartlar
+function tableMemory(view) {
+  const voids = { N: new Set(), E: new Set(), S: new Set(), W: new Set() };
+  const played = new Set();
+  const allTricks = [...view.history.map(t => t.plays), view.trick];
+  for (const plays of allTricks) {
+    if (!plays.length) continue;
+    const lead = plays[0].card.suit;
+    for (const p of plays) {
+      played.add(p.card.id);
+      if (p.card.suit !== lead) voids[p.seat].add(lead);   // renge uymadıysa o renk bitmiş
+    }
+  }
+  const known = new Set(played);
+  view.hand.forEach(c => known.add(c.id));
+  if (view.dummy) view.dummy.forEach(c => known.add(c.id));
+  const unseen = [];                       // gizli ellerde olabilecek kartlar (ortak veya deklaran)
+  for (const suit of SUITS) for (let rank = 2; rank <= 14; rank++) {
+    if (!known.has(suit + rank)) unseen.push({ suit, rank, id: suit + rank });
+  }
+  // Ortağın ilk açtığı renk (savunmada dönülecek renk)
+  const partner = partnerOf(view.seat);
+  const partnerLead = view.history.find(t => t.plays[0].seat === partner);
+  return { voids, played, unseen, partner, partnerSuit: partnerLead ? partnerLead.plays[0].card.suit : null };
+}
+
+// Yerin (Kuzey) elindeki kartlar; görünmüyorsa boş
+function dummyCards(view, suit) {
+  return view.dummy ? view.dummy.filter(c => suit === undefined || c.suit === suit) : [];
+}
+
+// Bu kartın üstünde, rakiplerde olabilecek ya da yerde duran daha büyük kart var mı?
+function isBoss(card, view, mem) {
+  if (mem.unseen.some(c => c.suit === card.suit && c.rank > card.rank)) return false;
+  return !dummyCards(view, card.suit).some(c => c.rank > card.rank);
+}
+
+// Eşdeğer kartlar: aralarındaki bütün kartlar oynanmış ya da bizdeyse aynı değerdedir (ör. P-K).
+// Eşdeğerlerin en küçüğünü oynamak briçte doğru alışkanlıktır.
+function lowestEquivalent(card, view, mem) {
+  const mine = view.hand.filter(c => c.suit === card.suit).sort((a, b) => b.rank - a.rank);
+  const blocked = r => mem.unseen.some(c => c.suit === card.suit && c.rank === r) ||
+                       dummyCards(view, card.suit).some(c => c.rank === r);
+  let best = card;
+  for (const c of mine) {
+    if (c.rank >= best.rank) continue;
+    let gap = false;
+    for (let r = c.rank + 1; r < best.rank; r++) if (blocked(r)) { gap = true; break; }
+    if (gap) break;
+    best = c;
+  }
+  return best;
+}
+
+const byRankAsc = (a, b) => a.rank - b.rank;
+const lowestOf = cards => cards.slice().sort(byRankAsc)[0];
+const highestOf = cards => cards.slice().sort((a, b) => b.rank - a.rank)[0];
+
+// Bu elde benden sonra oynayacak oyuncular
+function seatsAfterMe(view) {
+  const out = [];
+  let s = view.seat;
+  for (let i = view.trick.length + 1; i < 4; i++) { s = nextSeat(s); out.push(s); }
+  return out;
+}
+
+// Rakip "seat", şu an önde olacak "card" kartını geçebilir mi? (yalnızca görünen bilgiyle)
+function opponentCanBeat(seat, card, leadSuit, view, mem) {
+  const trump = view.trump;
+  if (seat === view.dummySeat && view.dummy) {            // yer: kartları açık, kesin bilinir
+    const follow = dummyCards(view, leadSuit);
+    if (follow.length) return card.suit === leadSuit && follow.some(c => c.rank > card.rank);
+    if (!trump) return false;
+    const trumps = dummyCards(view, trump);
+    if (!trumps.length) return false;
+    return card.suit === trump ? trumps.some(c => c.rank > card.rank) : true;
+  }
+  // deklaran: kartları gizli, en kötü ihtimali düşün
+  const voidLead = mem.voids[seat].has(leadSuit);
+  const unseenTrump = trump && !mem.voids[seat].has(trump) && mem.unseen.some(c => c.suit === trump);
+  if (card.suit === leadSuit) {
+    if (!voidLead && mem.unseen.some(c => c.suit === leadSuit && c.rank > card.rank)) return true;
+    return Boolean(voidLead && unseenTrump);
+  }
+  if (card.suit === trump) {                               // biz koz kestik: üstten kesebilir mi?
+    return voidLead && !mem.voids[seat].has(trump) &&
+      mem.unseen.some(c => c.suit === trump && c.rank > card.rank);
+  }
+  return false;
+}
+
+// Bu kartı oynarsam eli şu an ben mi alırım?
+function winsNow(card, view) {
+  return trickWinner([...view.trick, { seat: view.seat, card }], view.trump) === view.seat;
+}
+
+// Kartı oynarsam eli kesin alır mıyım? (sonraki rakipler geçemiyorsa)
+function winsSurely(card, view, mem) {
+  if (!winsNow(card, view)) return false;
+  const leadSuit = view.trick.length ? view.trick[0].card.suit : card.suit;
+  return seatsAfterMe(view).filter(s => s !== mem.partner)
+    .every(s => !opponentCanBeat(s, card, leadSuit, view, mem));
+}
+
+// ---------- Ana karar ----------
+function botHardDefense(view) {
+  const mem = tableMemory(view);
+  const legal = legalCards(view.hand, view.trick);
+  if (legal.length === 1) return legal[0];
+  if (view.trick.length === 0) return defenseLead(view, mem);
+  const leadSuit = view.trick[0].card.suit;
+  if (!view.hand.some(c => c.suit === leadSuit)) return voidPlay(view, mem, legal);
+  if (view.trick.length === 1) return secondHand(view, mem, legal);
+  if (view.trick.length === 2) return thirdHand(view, mem, legal);
+  return fourthHand(view, mem, legal);
+}
+
+// ---------- Açılış (elin ilk kartı) ----------
+// Her renk için bir "açılış seçeneği" puanlanır, en yüksek puanlı açılır.
+// Kozlu ve Sanzatu kontratları farklı ölçütlerle değerlendirilir.
+function defenseLead(view, mem) {
+  const options = [];
+  for (const suit of SUITS) {
+    const cards = view.hand.filter(c => c.suit === suit).sort((a, b) => b.rank - a.rank);
+    if (!cards.length) continue;
+    const opt = view.trump ? suitContractLead(suit, cards, view, mem) : notrumpLead(suit, cards, view, mem);
+    opt.score += leadPositionBonus(suit, cards, view, mem);
+    options.push(opt);
+  }
+  options.sort((a, b) => b.score - a.score || a.card.rank - b.card.rank);
+  return options[0].card;
+}
+
+// İki kart "bitişik" mi? (aralarındaki kartlar oynanmış ya da bizdeyse)
+function touching(hi, lo, view, mem) {
+  for (let r = lo.rank + 1; r < hi.rank; r++) {
+    if (mem.unseen.some(c => c.suit === hi.suit && c.rank === r)) return false;
+    if (dummyCards(view, hi.suit).some(c => c.rank === r)) return false;
+  }
+  return true;
+}
+
+// Uzun renkten "dördüncü büyük" (4 karttan azsa en küçük)
+function fourthBest(cards) {
+  return cards.length >= 4 ? cards[3] : cards[cards.length - 1];
+}
+
+// Kontratı batırmak için gereken el ve elimdeki kesin eller
+function cashOutNeeded(view, mem) {
+  const setNeed = 14 - view.target - view.tricksEW;           // batırmak için kalan el
+  const sure = view.hand.filter(c => c.suit !== view.trump && isBoss(c, view, mem) &&
+    !mem.voids[view.declarer].has(c.suit) && !(view.trump && view.dummy &&
+      !dummyCards(view, c.suit).length && dummyCards(view, view.trump).length)).length;
+  return setNeed > 0 && sure >= setNeed;
+}
+
+function suitContractLead(suit, cards, view, mem) {
+  const trump = view.trump;
+  const top = cards[0], second = cards[1];
+  const len = cards.length;
+  const hasTrump = view.hand.some(c => c.suit === trump);
+  const opening = view.history.length === 0;
+
+  if (suit === trump) {
+    // Koz açılışı: büyük koz yoksa ve yerin kısa rengi varsa (yer koz kesecekse) iyi bir seçimdir
+    let score = -3;
+    if (top.rank < 11 && len >= 2 && len <= 3) score += 4;
+    const dummyRuffs = view.dummy && dummyCards(view, trump).length >= 1 &&
+      SUITS.some(s => s !== trump && dummyCards(view, s).length <= 1);
+    if (dummyRuffs && top.rank < 13) score += 4;
+    return { card: cards[len - 1], score };
+  }
+
+  // Rengi yer ya da deklaran koz kesecekse açmak el verir
+  const dummyRuffs = view.dummy && !dummyCards(view, suit).length && dummyCards(view, trump).length;
+  const declRuffs = mem.voids[view.declarer].has(suit) && !mem.voids[view.declarer].has(trump);
+  if (dummyRuffs && declRuffs) return { card: cards[len - 1], score: -12 };   // çift kesim: rakibe hediye
+  const ruffPenalty = dummyRuffs || declRuffs ? -6 : 0;
+
+  // Kesin el (en büyük kart bizde): kontratı batırmaya yetiyorsa hemen çek
+  if (isBoss(top, view, mem)) {
+    let score = (opening ? -1 : 2) + ruffPenalty;      // ilk açılışta tek başına As açmak deklarana yarar
+    if (second && touching(top, second, view, mem)) score = 9 + ruffPenalty;   // As-Papaz gibi
+    if (!opening && cashOutNeeded(view, mem)) score += 10;
+    return { card: top, score };
+  }
+  // Ardışık büyükler: P-K, K-V, V-10 → büyüğü aç
+  if (second && top.rank >= 10 && touching(top, second, view, mem)) {
+    return { card: top, score: (top.rank >= 12 ? 7 : top.rank === 11 ? 6 : 5) + ruffPenalty };
+  }
+  // İç sıra: P-V-10, K-10-9 gibi → iç sıranın büyüğü (As'lı renkte değil)
+  const third = cards[2];
+  if (top.rank < 14 && second && third && second.rank >= 10 && touching(second, third, view, mem)) {
+    return { card: second, score: 5 + ruffPenalty };
+  }
+  // Tekli: elimde koz varsa ortak bu renkte alınca ben koz keserim
+  if (len === 1 && hasTrump && top.rank < 12) {
+    return { card: top, score: (opening ? 7 : 5) + ruffPenalty };
+  }
+  // As'lı ama Papazsız renk: küçük açma (As'ın altından açılmaz)
+  if (top.rank === 14) return { card: top, score: -1 + ruffPenalty };
+  // Desteksiz büyük (K, Q tek başına başta): tehlikeli açılış
+  if (top.rank >= 12) return { card: fourthBest(cards), score: (top.rank === 13 ? -3 : -1) + ruffPenalty };
+  if (top.rank === 11) return { card: fourthBest(cards), score: 1 + ruffPenalty };
+  // Büyüğü olmayan renk: güvenli açılış (ikili/üçlüden büyük, uzundan dördüncü)
+  if (len === 2) return { card: top, score: 3 + ruffPenalty };
+  if (len === 3) return { card: top, score: 4 + ruffPenalty };
+  return { card: fourthBest(cards), score: 3 + ruffPenalty };
+}
+
+function notrumpLead(suit, cards, view, mem) {
+  const len = cards.length;
+  const top = cards[0], second = cards[1], third = cards[2];
+  const honor = cards.reduce((t, c) => t + Math.max(0, c.rank - 10), 0);
+  const opening = view.history.length === 0;
+  let score = len * 2 + honor * 0.5;              // Sanzatu'da en uzun ve güçlü renk
+  let card;
+
+  if (isBoss(top, view, mem) && !opening) {
+    // Kurulmuş renk: kesin elleri çek
+    card = top;
+    score += cashOutNeeded(view, mem) ? 12 : 3;
+  } else if (second && third && top.rank >= 11 && touching(top, second, view, mem) &&
+             (touching(second, third, view, mem) || second.rank - third.rank === 2)) {
+    card = top;                                    // P-K-V, K-V-10, P-K-10 gibi sıralar: büyüğü
+    score += 3;
+  } else if (second && third && second.rank >= 10 && touching(second, third, view, mem) &&
+             top.rank > second.rank + 1) {
+    card = second;                                 // A-V-10, P-V-10 gibi iç sıralar: iç sıranın büyüğü
+    score += 1;
+  } else if (len >= 4) {
+    card = fourthBest(cards);                      // uzun renk: dördüncü büyük
+  } else if (top.rank <= 10) {
+    card = top;                                    // kısa ve zayıf renk: büyüğü (ortağa bilgi)
+    score -= 1;
+  } else {
+    card = cards[len - 1];                         // kısa renkte büyük kartı koru
+    score -= 3;
+  }
+  return { card, score };
+}
+
+// Masadaki duruma göre açılışa ek puan: ortağın rengi, yerin gücü
+function leadPositionBonus(suit, cards, view, mem) {
+  let bonus = 0;
+  if (mem.partnerSuit === suit && suit !== view.trump) bonus += 6;   // ortağın rengine dön
+  if (view.dummy) {
+    const d = dummyCards(view, suit);
+    const dummyHonors = d.filter(c => c.rank >= 11).length;
+    const dummyAfterMe = nextSeat(view.seat) === view.dummySeat;     // yer hemen sonra oynuyorsa
+    if (dummyAfterMe && dummyHonors && !d.some(c => isBoss(c, view, mem))) bonus += 2; // güçlü yerin "içinden"
+    if (!dummyAfterMe && d.some(c => c.rank >= 12)) bonus -= 2;      // yer sonda ve güçlü: açma
+    if (!dummyAfterMe && d.length && !dummyHonors) bonus += 1;       // yer sonda ve zayıf: açılabilir
+  }
+  return bonus;
+}
+
+// ---------- İkinci el ----------
+// Genel kural "ikinci el küçük"; açılan büyük kartı kapatmak bir şey kazandırıyorsa kapatılır.
+function secondHand(view, mem, legal) {
+  const led = view.trick[0].card;
+  const leader = view.trick[0].seat;
+  const thirdSeat = nextSeat(view.seat);
+  const higher = legal.filter(c => c.rank > led.rank).sort(byRankAsc);
+
+  // Kesin el ve kontratı batıracak son el: hemen al
+  const sure = legal.filter(c => winsSurely(c, view, mem)).sort(byRankAsc);
+  if (sure.length && 14 - view.target - view.tricksEW === 1) return lowestEquivalent(sure[0], view, mem);
+
+  if (led.rank >= 10 && higher.length) {
+    const cover = higher[0];
+    if (leader === view.dummySeat) {
+      // Yer büyük açtı: yerde bitişik küçük kart varsa (P-V-10 gibi) bu sefer kapatma
+      const dummyHasNext = dummyCards(view, led.suit).some(c => c.rank < led.rank && touching(led, c, view, mem));
+      if (!dummyHasNext) return lowestEquivalent(cover, view, mem);
+    } else if (thirdSeat === view.dummySeat && view.dummy) {
+      // Deklaran büyük açtı, yer sonra oynayacak: yer kapatmamı geçemiyorsa kapat
+      if (!opponentCanBeat(thirdSeat, cover, led.suit, view, mem)) return lowestEquivalent(cover, view, mem);
+    } else {
+      return lowestEquivalent(cover, view, mem);
+    }
+  }
+  // Küçük oyna ama kesin eli kaçırma: yer zayıf ve kartım kesinse al
+  if (sure.length && sure[0].rank <= 12 && thirdSeat === view.dummySeat) return lowestEquivalent(sure[0], view, mem);
+  return lowestOf(legal);
+}
+
+// ---------- Üçüncü el ----------
+// Ortağın açtığı kartı, yerin kartlarını ve bitişik büyükleri değerlendirir.
+function thirdHand(view, mem, legal) {
+  const partnerPlay = view.trick[0];
+  const partnerCard = partnerPlay.card;
+  const leadSuit = partnerCard.suit;
+  const fourth = nextSeat(view.seat);
+  const partnerWinning = trickWinner(view.trick, view.trump) === mem.partner;
+
+  // Ortak önde ve son oyuncu ortağın kartını geçemiyor: küçük at
+  if (partnerWinning && !opponentCanBeat(fourth, partnerCard, leadSuit, view, mem)) return lowestOf(legal);
+
+  // Eli kesin alacak en ucuz kart
+  const sure = legal.filter(c => winsSurely(c, view, mem)).sort(byRankAsc);
+  if (sure.length) {
+    // Ortak büyük bir kartla (sıranın başı) önde ise ve benim kartım ortağın kartının hemen üstüyse,
+    // ortağı geçmek gereksiz: küçük at
+    const best = lowestEquivalent(sure[0], view, mem);
+    if (partnerWinning && partnerCard.rank >= 10 && touching(best, partnerCard, view, mem)) return lowestOf(legal);
+    return best;
+  }
+
+  // Kesin alamıyorum. Son oyuncu yer (açık) ise ve kartımı geçebiliyorsa, büyük kartı harcama
+  if (fourth === view.dummySeat && view.dummy) return lowestOf(legal);
+
+  // Son oyuncu deklaran (gizli): "üçüncü el yüksek" — ama ortak büyük kartla öndeyse onu geçme
+  if (partnerWinning && partnerCard.rank >= 10) return lowestOf(legal);
+  const beatTarget = partnerWinning ? partnerCard : view.trick.reduce((best, p) =>
+    beats(p.card, best.card, leadSuit, view.trump) ? p : best).card;
+  const useful = legal.filter(c => c.suit === leadSuit && c.rank > beatTarget.rank);
+  if (!useful.length) return lowestOf(legal);
+  return lowestEquivalent(highestOf(useful), view, mem);
+}
+
+// ---------- Dördüncü el ----------
+function fourthHand(view, mem, legal) {
+  if (trickWinner(view.trick, view.trump) === mem.partner) return lowestOf(legal);
+  const winners = legal.filter(c => winsNow(c, view)).sort(byRankAsc);
+  return winners.length ? winners[0] : lowestOf(legal);
+}
+
+// ---------- Renge uyamıyorum: koz kes ya da at ----------
+function voidPlay(view, mem, legal) {
+  const trump = view.trump;
+  const leadSuit = view.trick[0].card.suit;
+  const partnerWinning = trickWinner(view.trick, trump) === mem.partner;
+  const partnerCard = view.trick.find(p => p.seat === mem.partner);
+  const after = seatsAfterMe(view).filter(s => s !== mem.partner);
+  const partnerSafe = partnerWinning && partnerCard &&
+    after.every(s => !opponentCanBeat(s, partnerCard.card, leadSuit, view, mem));
+
+  const trumps = trump ? legal.filter(c => c.suit === trump).sort(byRankAsc) : [];
+  if (!partnerSafe && trumps.length) {
+    // Kesin alan en küçük koz; ama en büyük kozla kesme: o koz zaten kendi başına bir el
+    const sureRuff = trumps.find(c => winsSurely(c, view, mem) && !(isBoss(c, view, mem) && trumps.length > 1));
+    if (sureRuff) return sureRuff;
+    const anyRuff = trumps.find(c => winsNow(c, view));
+    // Ortak önde değilse küçük kozla kes: üstten kesilse bile deklaranı büyük kozunu harcamaya zorlar
+    if (anyRuff && !partnerWinning) return anyRuff;
+  }
+  return chooseDiscard(view, mem, legal.filter(c => c.suit !== trump).length ? legal.filter(c => c.suit !== trump) : legal);
+}
+
+// Atış: büyük kartları korur, kesin elleri atmaz, yerin hâkim olduğu renkten atar
+function chooseDiscard(view, mem, cards) {
+  let best = null, bestPenalty = Infinity;
+  const hasTrump = view.trump && view.hand.some(c => c.suit === view.trump);
+  for (const suit of SUITS) {
+    const mine = cards.filter(c => c.suit === suit).sort(byRankAsc);
+    if (!mine.length) continue;
+    const card = mine[0];
+    const allInSuit = view.hand.filter(c => c.suit === suit);
+    const left = allInSuit.length - 1;
+    let penalty = 0;
+    // Atınca korumasız kalacak büyük kart (Papaz 2, Kız 3, Vale 4 kartla korunur)
+    for (const h of allInSuit) {
+      if (h === card || h.rank < 11 || isBoss(h, view, mem)) continue;
+      const guard = { 13: 2, 12: 3, 11: 4 }[h.rank];
+      if (left < guard) penalty += 8;
+    }
+    if (isBoss(card, view, mem)) penalty += 10;              // kesin eli atma
+    if (mem.partnerSuit === suit) penalty += 3;              // ortağın rengini tut
+    const d = dummyCards(view, suit);
+    if (d.length > left && d.some(c => isBoss(c, view, mem))) penalty -= 3;   // yer hâkim: bu renk boşa
+    if (!view.trump && left >= 3 && allInSuit.some(c => c.rank >= 12)) penalty += 3;  // SA'da uzun rengi tut
+    if (view.trump && hasTrump && allInSuit.length === 1) penalty -= 2;      // renk biterse koz kesebilirim
+    penalty += card.rank / 20;                               // eşitlikte küçük kartı at
+    if (penalty < bestPenalty) { bestPenalty = penalty; best = card; }
+  }
+  return best || lowestOf(cards);
+}
+
 // Elin puanı: As 4, Papaz 3, Kız 2, Vale 1 (briçte el gücünün ölçüsü)
 function hcp(hand) {
   return hand.reduce((total, c) => total + Math.max(0, c.rank - 10), 0);
@@ -839,6 +1256,7 @@ function newGame() {
     // Seviyede kontrata uygun dağıtım, serbest oyunda tamamen rastgele
     hands: setup.minHCP ? dealForContract(contract, setup.minHCP) : dealHands(shuffle(createDeck())),
     trick: [],            // masadaki kartlar: [{seat, card}]
+    history: [],          // biten eller: [{plays, winner}] (masa hafızası için)
     turn: 'W',            // ilk kartı Batı açar
     tricksNS: 0,          // Biz
     tricksEW: 0,          // Onlar
@@ -883,7 +1301,7 @@ function scheduleNext() {
       if (state.gameId !== id) return;      // bu arada ayarlara dönüldüyse hiçbir şey yapma
       // Rakipler seçilen zorlukta, eşiniz (eşsiz modda) her zaman en iyi şekilde oynar
       const level = t === 'N' ? 'zor' : state.difficulty;
-      const card = botChooseCard(state.hands[t], state.trick, state.trump, t, level);
+      const card = chooseBotCard(t, level);
       playCard(t, card);
     }, BOT_DELAY);
   } else {
@@ -892,9 +1310,25 @@ function scheduleNext() {
   }
 }
 
+// Bilgisayarın kartını seçer.
+// Zor seviyede Doğu ve Batı yeni savunma botunu kullanır; bu bota yalnızca görünür bilgi verilir.
+// Kuzey (eşsiz mod), Orta ve Kolay botlar eskisi gibi çalışır.
+function chooseBotCard(seat, level) {
+  const hand = state.hands[seat];
+  if (level === 'zor' && (seat === 'E' || seat === 'W')) {
+    try {
+      const picked = botHardDefense(buildView(state, seat));
+      const real = hand.find(c => c.id === picked.id);
+      if (real && legalCards(hand, state.trick).includes(real)) return real;
+    } catch (e) { /* beklenmedik durum: eski Zor bota dön */ }
+  }
+  return botChooseCard(hand, state.trick, state.trump, seat, level);
+}
+
 // El tamamlanınca: kazananı bul, sayacı artır, masayı temizle
 function collectTrick() {
   const winner = trickWinner(state.trick, state.trump);
+  state.history.push({ plays: state.trick.slice(), winner });
   if (winner === 'N' || winner === 'S') state.tricksNS++;
   else state.tricksEW++;
 
