@@ -4,33 +4,33 @@ Deklaran tarafı her iki durumda da eski Zor bot ile oynandı; tek fark savunmad
 
 | Dağıtım grubu | Oyun | Savunma eli (eski → yeni) | Batırma oranı (eski → yeni) | Yeni daha iyi / aynı / daha kötü |
 |---|---:|---:|---:|---:|
-| Seviye 1 (2S) | 300 | 3.92 → 4.30 | 7.3% → 15.3% | 130 / 114 / 56 |
-| TOPLAM | 4050 | 4.34 → 4.77 | 47.4% → 55.1% | 1763 / 1411 / 876 |
-| Kozlu | 2940 | 4.24 → 4.57 | 51.5% → 56.7% | 1214 / 1107 / 619 |
-| Seviye 2 (2H) | 300 | 4.11 → 4.49 | 9.3% → 15.7% | 134 / 111 / 55 |
-| Seviye 3 (1SA) | 300 | 5.07 → 5.76 | 19.3% → 37.3% | 147 / 87 / 66 |
-| Sanzatu | 1110 | 4.62 → 5.29 | 36.8% → 50.9% | 549 / 304 / 257 |
-| Seviye 4 (3S) | 300 | 3.72 → 4.05 | 22.7% → 35.3% | 139 / 98 / 63 |
-| Seviye 5 (3SA) | 300 | 3.80 → 4.43 | 30.3% → 48.3% | 139 / 94 / 67 |
-| Seviye 6 (4H) | 300 | 3.29 → 3.43 | 41.0% → 46.7% | 96 / 129 / 75 |
-| Seviye 7 (3SA) | 300 | 3.91 → 4.29 | 26.7% → 39.3% | 130 / 85 / 85 |
-| Seviye 8 (4S) | 300 | 3.30 → 3.37 | 40.3% → 45.3% | 88 / 134 / 78 |
-| Seviye 9 (5D) | 300 | 2.80 → 2.93 | 62.3% → 63.7% | 92 / 130 / 78 |
-| Seviye 10 (6S) | 300 | 2.44 → 2.45 | 78.7% → 81.3% | 77 / 140 / 83 |
-| Serbest (rastgele) | 1050 | 6.37 → 7.10 | 86.4% → 90.2% | 591 / 289 / 170 |
+| Seviye 1 (2S) | 600 | 3.99 → 4.32 | 8.2% → 14.5% | 259 / 214 / 127 |
+| TOPLAM | 8100 | 4.33 → 4.72 | 47.5% → 54.3% | 3476 / 2831 / 1793 |
+| Kozlu | 5880 | 4.23 → 4.57 | 51.5% → 56.8% | 2438 / 2243 / 1199 |
+| Seviye 2 (2H) | 600 | 4.09 → 4.46 | 10.3% → 17.7% | 267 / 222 / 111 |
+| Seviye 3 (1SA) | 600 | 5.07 → 5.69 | 19.5% → 36.2% | 310 / 138 / 152 |
+| Sanzatu | 2220 | 4.60 → 5.11 | 37.0% → 47.6% | 1038 / 588 / 594 |
+| Seviye 4 (3S) | 600 | 3.75 → 4.10 | 25.2% → 36.2% | 261 / 217 / 122 |
+| Seviye 5 (3SA) | 600 | 3.86 → 4.18 | 31.2% → 41.0% | 248 / 171 / 181 |
+| Seviye 6 (4H) | 600 | 3.23 → 3.38 | 39.3% → 45.3% | 203 / 250 / 147 |
+| Seviye 7 (3SA) | 600 | 3.77 → 4.13 | 29.0% → 37.8% | 248 / 188 / 164 |
+| Seviye 8 (4S) | 600 | 3.25 → 3.46 | 40.3% → 48.7% | 212 / 265 / 123 |
+| Seviye 9 (5D) | 600 | 2.79 → 2.83 | 61.5% → 61.2% | 167 / 274 / 159 |
+| Seviye 10 (6S) | 600 | 2.46 → 2.44 | 80.2% → 80.0% | 155 / 285 / 160 |
+| Serbest (rastgele) | 2100 | 6.35 → 7.06 | 84.8% → 89.9% | 1146 / 607 / 347 |
 
 ## Stratejik karar hataları (düşük daha iyi)
 
 | Hata | Eski Zor | Yeni Zor |
 |---|---:|---:|
-| Kozluda As'ın altından küçük açılış | 13.3% (392/2940) | 0.0% (0/2940) |
-| Kozluda desteksiz Papaz'dan küçük açılış | 11.6% (342/2940) | 2.0% (59/2940) |
-| Üçüncü elde eli küçük kartla rakibe kaptırma | 10.6% (1643/15493) | 3.9% (653/16872) |
-| Üçüncü elde ortağın kazanan kartını gereksiz geçme | 0.0% (0/4704) | 0.0% (0/8109) |
-| Ortağın kesin elini koz kesme | 0.0% (0/731) | 0.0% (0/978) |
-| Papaz/Kız'ı korumasız bırakan atış | 11.6% (2046/17677) | 9.2% (1949/21134) |
+| Kozluda As'ın altından küçük açılış | 12.6% (739/5880) | 0.0% (0/5880) |
+| Kozluda desteksiz Papaz'dan küçük açılış | 11.8% (696/5880) | 2.4% (144/5880) |
+| Üçüncü elde eli küçük kartla rakibe kaptırma | 11.1% (3415/30852) | 4.2% (1401/33568) |
+| Üçüncü elde ortağın kazanan kartını gereksiz geçme | 0.0% (0/9386) | 0.0% (0/16013) |
+| Ortağın kesin elini koz kesme | 0.0% (0/1466) | 0.0% (0/1958) |
+| Papaz/Kız'ı korumasız bırakan atış | 11.4% (4002/35075) | 9.1% (3840/42283) |
 
-## Yeni botun eskisinden kötü savunduğu dağıtımlar: 876
+## Yeni botun eskisinden kötü savunduğu dağıtımlar: 1793
 
 - **Seviye 1 (2S), 2S**: savunma 2 el az aldı. İlk farklı karar: 1. el, W, açılış — eski ♦3, yeni ♥7. Masada: (boş); W eli: ♠A ♥7 ♥6 ♥4 ♣10 ♣7 ♦K ♦9 ♦8 ♦7 ♦6 ♦5 ♦3
 - **Seviye 1 (2S), 2S**: savunma 1 el az aldı. İlk farklı karar: 2. el, W, açılış — eski ♥9, yeni ♥10. Masada: (boş); W eli: ♠K ♠J ♠10 ♠6 ♥Q ♥10 ♥9 ♣9 ♣6 ♣5 ♦7 ♦4
